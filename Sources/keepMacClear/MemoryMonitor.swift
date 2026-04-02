@@ -3,15 +3,27 @@ import Darwin
 import UserNotifications
 import Combine
 
-// MARK: - MemoryMonitor
+private final class MemoryMonitorTimerBridge: NSObject {
+    weak var monitor: MemoryMonitor?
 
+    @objc func fireSystem() {
+        let m = monitor
+        Task { @MainActor in m?.refreshSystem() }
+    }
+
+    @objc func fireProcesses() {
+        let m = monitor
+        Task { @MainActor in m?.refreshProcesses() }
+    }
+}
+
+@MainActor
 final class MemoryMonitor: ObservableObject {
     @Published var systemMemory: SystemMemoryInfo = .empty
     @Published var topProcesses: [ProcessMemoryInfo] = []
     @Published var browserGroups: [BrowserGroup] = []
     @Published var isAutoCleanEnabled: Bool = false
 
-    // User-configurable limits (stored in UserDefaults)
     @Published var alertThresholdPercent: Double {
         didSet { UserDefaults.standard.set(alertThresholdPercent, forKey: "alertThresholdPercent") }
     }
@@ -22,11 +34,11 @@ final class MemoryMonitor: ObservableObject {
         didSet { UserDefaults.standard.set(autoKillEnabled, forKey: "autoKillEnabled") }
     }
 
-    private var systemTimer: Timer?
-    private var processTimer: Timer?
+    nonisolated(unsafe) private var systemTimer: Timer?
+    nonisolated(unsafe) private var processTimer: Timer?
     private var lastAlertDate: Date = .distantPast
+    nonisolated(unsafe) private let timerBridge = MemoryMonitorTimerBridge()
 
-    // Known browser process name prefixes, keyed by display name
     private let browserMap: [String: [String]] = [
         "Google Chrome": ["Google Chrome", "Google Chrome Helper"],
         "Safari":        ["Safari", "Safari Web Content", "com.apple.WebKit.WebContent",
@@ -46,23 +58,36 @@ final class MemoryMonitor: ObservableObject {
         } else {
             processLimitMB = UserDefaults.standard.double(forKey: "processLimitMB")
         }
-        autoKillEnabled       = UserDefaults.standard.bool(forKey: "autoKillEnabled")
+        autoKillEnabled = UserDefaults.standard.bool(forKey: "autoKillEnabled")
         startMonitoring()
     }
 
-    deinit { stopMonitoring() }
-
-    // MARK: - Control
+    nonisolated deinit {
+        DispatchQueue.main.sync {
+            systemTimer?.invalidate()
+            processTimer?.invalidate()
+        }
+        timerBridge.monitor = nil
+    }
 
     func startMonitoring() {
+        timerBridge.monitor = self
         refresh()
 
-        systemTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            self?.refreshSystem()
-        }
-        processTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            self?.refreshProcesses()
-        }
+        systemTimer = Timer.scheduledTimer(
+            timeInterval: 2.0,
+            target: timerBridge,
+            selector: #selector(MemoryMonitorTimerBridge.fireSystem),
+            userInfo: nil,
+            repeats: true
+        )
+        processTimer = Timer.scheduledTimer(
+            timeInterval: 5.0,
+            target: timerBridge,
+            selector: #selector(MemoryMonitorTimerBridge.fireProcesses),
+            userInfo: nil,
+            repeats: true
+        )
         RunLoop.main.add(systemTimer!, forMode: .common)
         RunLoop.main.add(processTimer!, forMode: .common)
     }
@@ -77,41 +102,35 @@ final class MemoryMonitor: ObservableObject {
         refreshProcesses()
     }
 
-    // MARK: - Refresh
-
-    private func refreshSystem() {
-        // host_statistics64 is a mach syscall — always read off the main thread.
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let info = Self.readSystemMemory()
-            DispatchQueue.main.async {
-                guard let self else { return }
-                self.systemMemory = info
-                self.checkThreshold(info)
-            }
+    fileprivate func refreshSystem() {
+        Task { [weak self] in
+            guard let self else { return }
+            let info = await Task.detached(priority: .userInitiated) {
+                MemoryMonitor.readSystemMemory()
+            }.value
+            self.systemMemory = info
+            self.checkThreshold(info)
         }
     }
 
-    private func refreshProcesses() {
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+    fileprivate func refreshProcesses() {
+        Task { [weak self] in
             guard let self else { return }
-            let all = Self.readProcessList()
+            let all = await Task.detached(priority: .userInitiated) {
+                MemoryMonitor.readProcessList()
+            }.value
             let top = Array(all.prefix(15))
             let browsers = self.buildBrowserGroups(from: all)
-            DispatchQueue.main.async {
-                self.topProcesses = top
-                self.browserGroups = browsers
-                if self.autoKillEnabled {
-                    self.enforceProcessLimit(all)
-                }
+            self.topProcesses = top
+            self.browserGroups = browsers
+            if self.autoKillEnabled {
+                self.enforceProcessLimit(all)
             }
         }
     }
-
-    // MARK: - Threshold / Limit Checks
 
     private func checkThreshold(_ info: SystemMemoryInfo) {
         guard info.usagePercent >= alertThresholdPercent else { return }
-        // Debounce: at most one alert per 5 minutes
         let now = Date()
         guard now.timeIntervalSince(lastAlertDate) > 300 else { return }
         lastAlertDate = now
@@ -135,11 +154,9 @@ final class MemoryMonitor: ObservableObject {
                 body: "\(proc.name) is using \(proc.memoryFormatted) — over your \(Int(processLimitMB)) MB limit."
             )
             MemoryCleaner.shared.killProcess(pid: proc.pid)
-            break // handle one at a time
+            break
         }
     }
-
-    // MARK: - Browser Grouping
 
     private func buildBrowserGroups(from processes: [ProcessMemoryInfo]) -> [BrowserGroup] {
         browserMap.compactMap { browserName, prefixes -> BrowserGroup? in
@@ -157,10 +174,8 @@ final class MemoryMonitor: ObservableObject {
         .sorted { $0.totalMemory > $1.totalMemory }
     }
 
-    // MARK: - Notifications
-
     private func notify(title: String, body: String) {
-        guard Bundle.main.bundleIdentifier != nil else { return } // needs .app bundle
+        guard Bundle.main.bundleIdentifier != nil else { return }
         let content = UNMutableNotificationContent()
         content.title = title
         content.body  = body
@@ -170,9 +185,7 @@ final class MemoryMonitor: ObservableObject {
         )
     }
 
-    // MARK: - System Memory Reading
-
-    static func readSystemMemory() -> SystemMemoryInfo {
+    nonisolated static func readSystemMemory() -> SystemMemoryInfo {
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(
             MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size
@@ -184,8 +197,8 @@ final class MemoryMonitor: ObservableObject {
         }
         guard kern == KERN_SUCCESS else { return .empty }
 
-        let page   = UInt64(vm_kernel_page_size)
-        let total  = ProcessInfo.processInfo.physicalMemory
+        let page  = UInt64(getpagesize())
+        let total = ProcessInfo.processInfo.physicalMemory
         return SystemMemoryInfo(
             total:      total,
             active:     UInt64(stats.active_count)         * page,
@@ -196,9 +209,7 @@ final class MemoryMonitor: ObservableObject {
         )
     }
 
-    // MARK: - Process List Reading
-
-    static func readProcessList() -> [ProcessMemoryInfo] {
+    nonisolated static func readProcessList() -> [ProcessMemoryInfo] {
         let pidCount = proc_listallpids(nil, 0)
         guard pidCount > 0 else { return [] }
 
@@ -213,17 +224,15 @@ final class MemoryMonitor: ObservableObject {
             let pid = pids[i]
             guard pid > 0 else { continue }
 
-            // Process name
             var nameBuf = [CChar](repeating: 0, count: Int(MAXPATHLEN))
             proc_name(pid, &nameBuf, UInt32(nameBuf.count))
-            let name = String(cString: nameBuf)
+            let name = ProcStrings.processName(from: nameBuf)
             guard !name.isEmpty else { continue }
 
-            // Task / memory info
             var info = proc_taskinfo()
             let ret = proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &info,
                                    Int32(MemoryLayout<proc_taskinfo>.size))
-            guard ret > 0, info.pti_resident_size > 1_048_576 else { continue } // >1 MB
+            guard ret > 0, info.pti_resident_size > 1_048_576 else { continue }
 
             result.append(ProcessMemoryInfo(pid: pid, name: name, memoryBytes: info.pti_resident_size))
         }
@@ -232,9 +241,6 @@ final class MemoryMonitor: ObservableObject {
     }
 }
 
-// MARK: - Helpers
-
 private extension Double {
-    /// Returns nil when the value is 0 (so we can fall back to a default).
     var nonZero: Double? { self == 0 ? nil : self }
 }

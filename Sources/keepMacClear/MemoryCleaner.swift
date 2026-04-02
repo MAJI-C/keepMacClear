@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 
+@MainActor
 final class MemoryCleaner {
     static let shared = MemoryCleaner()
     private init() {}
@@ -8,17 +9,21 @@ final class MemoryCleaner {
     // MARK: - System Cache Purge (requires admin password via system dialog)
 
     /// Runs `purge` via osascript — triggers macOS native admin password prompt.
-    func purgeSystemCache(completion: ((Bool) -> Void)? = nil) {
+    func purgeSystemCache(completion: (@Sendable (Bool) -> Void)? = nil) {
         DispatchQueue.global(qos: .userInitiated).async {
             let src = "do shell script \"purge\" with administrator privileges"
             guard let script = NSAppleScript(source: src) else {
-                DispatchQueue.main.async { completion?(false) }
+                DispatchQueue.main.async {
+                    completion?(false)
+                }
                 return
             }
             var err: NSDictionary?
             script.executeAndReturnError(&err)
             let ok = (err == nil)
-            DispatchQueue.main.async { completion?(ok) }
+            DispatchQueue.main.async {
+                completion?(ok)
+            }
         }
     }
 
@@ -57,7 +62,7 @@ final class MemoryCleaner {
         freeAllocatorMemory()
     }
 
-    func fullClean(completion: ((Bool) -> Void)? = nil) {
+    func fullClean(completion: (@Sendable (Bool) -> Void)? = nil) {
         freeAllocatorMemory()
         purgeSystemCache(completion: completion)
     }

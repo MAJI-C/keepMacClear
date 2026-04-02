@@ -3,15 +3,31 @@ import SwiftUI
 struct PortMonitorView: View {
     @EnvironmentObject var portMonitor: PortMonitor
     @Environment(\.dismiss) private var dismiss
+    @State private var closingPort: UInt16? = nil
+    @State private var closeResult: String? = nil
+
+    private var openPorts: [PortStatus] {
+        portMonitor.statuses.filter(\.isOpen)
+    }
+
+    private var closedPorts: [PortStatus] {
+        portMonitor.statuses.filter { !$0.isOpen }
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(spacing: 0) {
             header
             Divider()
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 10) {
-                    openPortsSummary
-                    portList
+                VStack(alignment: .leading, spacing: 14) {
+                    legendBox
+
+                    if !openPorts.isEmpty {
+                        openSection
+                    }
+
+                    portRulesSection
+
                     rulesFileHint
                 }
                 .padding(14)
@@ -19,7 +35,7 @@ struct PortMonitorView: View {
             Divider()
             footer
         }
-        .frame(width: 400, height: 520)
+        .frame(width: 420, height: 540)
         .background(Color(NSColor.windowBackgroundColor))
     }
 
@@ -33,80 +49,147 @@ struct PortMonitorView: View {
                 .font(.headline)
             Spacer()
 
-            let openCount = portMonitor.statuses.filter(\.isOpen).count
-            if openCount > 0 {
-                Text("\(openCount) open")
-                    .font(.caption.weight(.bold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(Color.red, in: Capsule())
-            } else {
-                Text("All clear")
+            if openPorts.isEmpty {
+                Label("All Secure", systemImage: "lock.shield.fill")
                     .font(.caption.weight(.medium))
                     .foregroundColor(.green)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 3)
                     .background(Color.green.opacity(0.15), in: Capsule())
+            } else {
+                Label("\(openPorts.count) Exposed", systemImage: "exclamationmark.shield.fill")
+                    .font(.caption.weight(.bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Color.red, in: Capsule())
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
     }
 
-    // MARK: - Summary
+    // MARK: - Legend
 
-    private var openPortsSummary: some View {
-        Group {
-            let openPorts = portMonitor.statuses.filter(\.isOpen)
-            if !openPorts.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(openPorts) { status in
-                        HStack(spacing: 8) {
-                            Circle()
-                                .fill(severityColor(status.rule.severity))
-                                .frame(width: 8, height: 8)
-                            Text("\(status.rule.port)")
-                                .font(.system(.caption, design: .monospaced).weight(.bold))
-                                .frame(width: 50, alignment: .trailing)
+    private var legendBox: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 12) {
+                HStack(spacing: 4) {
+                    Circle().fill(.red).frame(width: 8, height: 8)
+                    Text("Port is open (exposed)")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                HStack(spacing: 4) {
+                    Circle().fill(.green).frame(width: 8, height: 8)
+                    Text("Port is closed (safe)")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+            HStack(spacing: 12) {
+                HStack(spacing: 4) {
+                    Image(systemName: "switch.2")
+                        .font(.system(size: 9))
+                        .foregroundColor(.secondary)
+                    Text("ON = enforce closed, OFF = ignore")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+        }
+        .padding(8)
+        .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    // MARK: - Open Ports (needs attention)
+
+    private var openSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Exposed Ports — Action Required", systemImage: "exclamationmark.triangle.fill")
+                .font(.caption.weight(.bold))
+                .foregroundColor(.red)
+
+            ForEach(openPorts) { status in
+                HStack(spacing: 8) {
+                    Circle().fill(.red).frame(width: 10, height: 10)
+
+                    Text("\(status.rule.port)")
+                        .font(.system(.caption, design: .monospaced).weight(.bold))
+                        .frame(width: 50, alignment: .trailing)
+
+                    VStack(alignment: .leading, spacing: 1) {
+                        HStack(spacing: 4) {
                             Text(status.rule.name)
                                 .font(.caption.weight(.semibold))
-                            Spacer()
-                            Text("OPEN")
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(severityColor(status.rule.severity), in: Capsule())
+                            severityBadge(status.rule.severity)
                         }
-                        .padding(6)
-                        .background(severityColor(status.rule.severity).opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                        Text(status.rule.description)
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
                     }
+
+                    Spacer()
+
+                    Button {
+                        closePort(status.rule.port)
+                    } label: {
+                        if closingPort == status.rule.port {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Text("Close")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Color.red, in: Capsule())
+                        }
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Kill the process listening on port \(status.rule.port)")
+                }
+                .padding(6)
+                .background(Color.red.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+            }
+
+            if let closeResult {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                        .font(.system(size: 10))
+                    Text(closeResult)
+                        .font(.system(size: 10))
+                        .foregroundColor(.green)
                 }
             }
         }
+        .padding(10)
+        .background(Color.red.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
     }
 
-    // MARK: - Port list with toggles
+    // MARK: - All port rules
 
-    private var portList: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label("Monitored Ports", systemImage: "checklist")
+    private var portRulesSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Port Rules", systemImage: "checklist")
                 .font(.caption.weight(.semibold))
                 .foregroundColor(.secondary)
-                .padding(.bottom, 4)
 
             ForEach(portMonitor.rules) { rule in
-                portRow(rule)
+                portRuleRow(rule)
             }
         }
     }
 
-    private func portRow(_ rule: PortRule) -> some View {
+    private func portRuleRow(_ rule: PortRule) -> some View {
         let status = portMonitor.statuses.first { $0.rule.port == rule.port }
         let isOpen = status?.isOpen ?? false
 
         return HStack(spacing: 8) {
+            // Enforce toggle
             Toggle("", isOn: Binding(
                 get: { rule.enabled },
                 set: { _ in portMonitor.toggleRule(port: rule.port) }
@@ -115,9 +198,10 @@ struct PortMonitorView: View {
             .controlSize(.mini)
             .labelsHidden()
 
+            // Status light
             Circle()
-                .fill(isOpen ? severityColor(rule.severity) : Color(NSColor.tertiaryLabelColor))
-                .frame(width: 6, height: 6)
+                .fill(statusColor(enabled: rule.enabled, isOpen: isOpen))
+                .frame(width: 8, height: 8)
 
             Text("\(rule.port)")
                 .font(.system(.caption, design: .monospaced).weight(.medium))
@@ -126,37 +210,53 @@ struct PortMonitorView: View {
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
                     Text(rule.name)
-                        .font(.caption.weight(.semibold))
+                        .font(.caption.weight(.medium))
                     severityBadge(rule.severity)
-                    if isOpen {
-                        Text("OPEN")
-                            .font(.system(size: 8, weight: .bold, design: .monospaced))
-                            .foregroundColor(.red)
-                    }
                 }
                 Text(rule.description)
                     .font(.system(size: 9))
                     .foregroundColor(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(1)
             }
 
             Spacer()
+
+            // Status label
+            if rule.enabled {
+                if isOpen {
+                    Text("OPEN")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(Color.red, in: Capsule())
+                } else {
+                    Text("CLOSED")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundColor(.green)
+                }
+            } else {
+                Text("IGNORED")
+                    .font(.system(size: 8, design: .monospaced))
+                    .foregroundColor(.secondary.opacity(0.5))
+            }
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 6)
-        .background(
-            isOpen
-                ? severityColor(rule.severity).opacity(0.06)
-                : Color.clear,
-            in: RoundedRectangle(cornerRadius: 5)
-        )
+        .padding(.vertical, 3)
+        .padding(.horizontal, 4)
+        .opacity(rule.enabled ? 1 : 0.5)
+    }
+
+    /// Green if closed (safe), red if open (exposed), gray if not monitored.
+    private func statusColor(enabled: Bool, isOpen: Bool) -> Color {
+        guard enabled else { return Color(NSColor.tertiaryLabelColor) }
+        return isOpen ? .red : .green
     }
 
     // MARK: - Rules file hint
 
     private var rulesFileHint: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Divider().padding(.vertical, 4)
+            Divider().padding(.vertical, 2)
             Label("Edit rules without rebuilding", systemImage: "doc.text")
                 .font(.caption.weight(.semibold))
                 .foregroundColor(.secondary)
@@ -164,9 +264,6 @@ struct PortMonitorView: View {
                 .font(.system(size: 9, design: .monospaced))
                 .foregroundColor(.secondary)
                 .textSelection(.enabled)
-            Text("Add or remove entries, change severity, toggle enabled — then tap Reload.")
-                .font(.system(size: 9))
-                .foregroundColor(.secondary)
         }
     }
 
@@ -181,7 +278,6 @@ struct PortMonitorView: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .help("Reload port-rules.json from disk")
 
             Button {
                 NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: portMonitor.rulesFileURL.deletingLastPathComponent().path)
@@ -200,6 +296,20 @@ struct PortMonitorView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
+    }
+
+    // MARK: - Actions
+
+    private func closePort(_ port: UInt16) {
+        closingPort = port
+        closeResult = nil
+        Task {
+            let result = await portMonitor.closePort(port)
+            closingPort = nil
+            closeResult = result.message
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            closeResult = nil
+        }
     }
 
     // MARK: - Helpers

@@ -4,8 +4,11 @@ struct DashboardView: View {
     @EnvironmentObject var monitor: MemoryMonitor
     @EnvironmentObject var spawnMonitor: ProcessSpawnMonitor
     @EnvironmentObject var portMonitor: PortMonitor
+    @EnvironmentObject var dnsMonitor: DNSMonitor
     @State private var showSettings = false
     @State private var showPortMonitor = false
+    @State private var showSpawnTree = false
+    @State private var showDNSMonitor = false
     @State private var cleanState: CleanState = .idle
 
     enum CleanState { case idle, running, done }
@@ -18,6 +21,9 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     if !spawnMonitor.events.isEmpty {
                         spawnAlertsSection
+                    }
+                    if dnsMonitor.status != .safe && dnsMonitor.status != .unknown {
+                        dnsAlertSection
                     }
                     if !portMonitor.statuses.filter(\.isOpen).isEmpty {
                         openPortsSection
@@ -43,6 +49,14 @@ struct DashboardView: View {
         .sheet(isPresented: $showPortMonitor) {
             PortMonitorView()
                 .environmentObject(portMonitor)
+        }
+        .sheet(isPresented: $showSpawnTree) {
+            SpawnTreeView()
+                .environmentObject(spawnMonitor)
+        }
+        .sheet(isPresented: $showDNSMonitor) {
+            DNSMonitorView()
+                .environmentObject(dnsMonitor)
         }
     }
 
@@ -146,6 +160,43 @@ struct DashboardView: View {
             .foregroundColor(.secondary)
     }
 
+    // MARK: - DNS Alert
+
+    private var dnsAlertSection: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                sectionHeader("DNS Status", icon: "antenna.radiowaves.left.and.right")
+                Spacer()
+                Text(dnsMonitor.status.label)
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(dnsMonitor.status == .unsafe ? Color.red : Color.orange, in: Capsule())
+                Button { showDNSMonitor = true } label: {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Open DNS monitor")
+            }
+
+            ForEach(dnsMonitor.servers.filter { !$0.provider.isSafe }) { server in
+                HStack(spacing: 6) {
+                    Circle().fill(.red).frame(width: 6, height: 6)
+                    Text(server.address)
+                        .font(.system(.caption, design: .monospaced).weight(.bold))
+                    Text(server.provider.rawValue)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                    Spacer()
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
     // MARK: - Open Ports
 
     private var openPortsSection: some View {
@@ -214,6 +265,13 @@ struct DashboardView: View {
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(Color.red, in: Capsule())
+                Button { showSpawnTree = true } label: {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Open spawn monitor")
                 Button {
                     spawnMonitor.clearEvents()
                 } label: {
@@ -225,10 +283,20 @@ struct DashboardView: View {
                 .help("Clear all spawn alerts")
             }
 
-            ForEach(spawnMonitor.events.prefix(10)) { event in
-                SpawnAlertRow(event: event) {
+            ForEach(spawnMonitor.events.prefix(5)) { event in
+                SpawnAlertRow(event: event, onDismiss: {
                     spawnMonitor.dismissEvent(event)
+                }, onBlock: {
+                    spawnMonitor.blockEvent(event)
+                })
+            }
+            if spawnMonitor.events.count > 5 {
+                Button { showSpawnTree = true } label: {
+                    Text("View all \(spawnMonitor.events.count) events...")
+                        .font(.system(size: 10))
+                        .foregroundColor(.accentColor)
                 }
+                .buttonStyle(.borderless)
             }
         }
     }
@@ -277,11 +345,24 @@ struct DashboardView: View {
             .disabled(cleanState == .running)
             .help("Purge disk cache (requires admin password)")
 
+            Button { showSpawnTree = true } label: {
+                Image(systemName: "exclamationmark.shield")
+            }
+            .buttonStyle(.borderless)
+            .help("Spawn Monitor")
+
             Button { showPortMonitor = true } label: {
                 Image(systemName: "network.badge.shield.half.filled")
             }
             .buttonStyle(.borderless)
             .help("Port Monitor")
+
+            Button { showDNSMonitor = true } label: {
+                Image(systemName: "antenna.radiowaves.left.and.right")
+                    .foregroundColor(dnsMonitor.status == .safe || dnsMonitor.status == .unknown ? .secondary : .red)
+            }
+            .buttonStyle(.borderless)
+            .help("DNS Monitor")
 
             Button { showSettings = true } label: {
                 Image(systemName: "gear")
@@ -307,16 +388,22 @@ struct DashboardView: View {
     private func quickClean() {
         MemoryCleaner.shared.quickClean()
         cleanState = .done
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { cleanState = .idle }
+        Task {
+            try? await Task.sleep(for: .seconds(2))
+            cleanState = .idle
+        }
         monitor.refresh()
     }
 
     private func fullClean() {
         cleanState = .running
         MemoryCleaner.shared.fullClean { _ in
-            cleanState = .done
-            monitor.refresh()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { cleanState = .idle }
+            Task { @MainActor in
+                cleanState = .done
+                monitor.refresh()
+                try? await Task.sleep(for: .seconds(2))
+                cleanState = .idle
+            }
         }
     }
 }

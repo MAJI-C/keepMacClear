@@ -3,13 +3,14 @@ import SwiftUI
 struct SpawnAlertRow: View {
     let event: SuspiciousSpawnEvent
     var onDismiss: () -> Void
+    var onBlock: (() -> Void)? = nil
 
     @State private var isHovering = false
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "exclamationmark.shield.fill")
-                .foregroundColor(.red)
+            Image(systemName: event.wasBlocked ? "shield.slash.fill" : "exclamationmark.shield.fill")
+                .foregroundColor(event.wasBlocked ? .orange : .red)
                 .font(.system(size: 12))
 
             VStack(alignment: .leading, spacing: 2) {
@@ -21,7 +22,15 @@ struct SpawnAlertRow: View {
                         .foregroundColor(.secondary)
                     Text(event.childName)
                         .font(.caption.weight(.semibold))
-                        .foregroundColor(.red)
+                        .foregroundColor(event.wasBlocked ? .orange : .red)
+                    if event.wasBlocked {
+                        Text("BLOCKED")
+                            .font(.system(size: 7, weight: .bold, design: .monospaced))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1)
+                            .background(Color.orange, in: Capsule())
+                    }
                 }
                 Text(event.reason)
                     .font(.system(size: 9))
@@ -38,15 +47,27 @@ struct SpawnAlertRow: View {
 
                 if isHovering {
                     HStack(spacing: 4) {
-                        Button {
-                            MemoryCleaner.shared.killProcess(pid: event.childPid)
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 12))
-                                .foregroundColor(.red)
+                        if !event.wasBlocked {
+                            Button {
+                                MemoryCleaner.shared.killProcess(pid: event.childPid)
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.red)
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Kill \(event.childName)")
+
+                            if let onBlock {
+                                Button(action: onBlock) {
+                                    Image(systemName: "shield.slash.fill")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.orange)
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Block \(event.parentName) → \(event.childName)")
+                            }
                         }
-                        .buttonStyle(.borderless)
-                        .help("Kill \(event.childName)")
 
                         Button(action: onDismiss) {
                             Image(systemName: "eye.slash")
@@ -60,7 +81,10 @@ struct SpawnAlertRow: View {
             }
         }
         .padding(6)
-        .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+        .background(
+            (event.wasBlocked ? Color.orange : Color.red).opacity(0.08),
+            in: RoundedRectangle(cornerRadius: 6)
+        )
         .onHover { isHovering = $0 }
     }
 }

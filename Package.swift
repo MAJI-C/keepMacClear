@@ -1,4 +1,4 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
@@ -7,7 +7,11 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "keepMacClear",
-            path: "Sources/keepMacClear"
+            path: "Sources/keepMacClear",
+            swiftSettings: [
+                .swiftLanguageMode(.v6),
+                .unsafeFlags(["-warnings-as-errors"]),
+            ]
         )
     ]
 )

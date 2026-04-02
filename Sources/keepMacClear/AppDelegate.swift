@@ -2,16 +2,34 @@ import AppKit
 import SwiftUI
 import UserNotifications
 
+private final class IconTimerBridge: NSObject {
+    weak var delegate: AppDelegate?
+
+    @objc func fire() {
+        let d = delegate
+        Task { @MainActor in d?.updateStatusBarIcon() }
+    }
+}
+
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     let monitor = MemoryMonitor()
     let spawnMonitor = ProcessSpawnMonitor()
     let portMonitor = PortMonitor()
-    private var iconUpdateTimer: Timer?
+    let dnsMonitor = DNSMonitor()
+    nonisolated(unsafe) private var iconUpdateTimer: Timer?
+    nonisolated(unsafe) private let iconTimerBridge = IconTimerBridge()
 
-    // Cached once — font object is constant, no need to re-allocate every 2 s.
     private let statusBarFont = NSFont.monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+
+    nonisolated deinit {
+        DispatchQueue.main.sync {
+            iconUpdateTimer?.invalidate()
+        }
+        iconTimerBridge.delegate = nil
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         requestNotificationPermission()
@@ -19,9 +37,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupPopover()
     }
 
-    // MARK: - Status Bar
-
     private func setupStatusBar() {
+        iconTimerBridge.delegate = self
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem.button {
@@ -30,13 +47,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             updateStatusBarIcon()
         }
 
-        iconUpdateTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            self?.updateStatusBarIcon()
-        }
+        iconUpdateTimer = Timer.scheduledTimer(
+            timeInterval: 2.0,
+            target: iconTimerBridge,
+            selector: #selector(IconTimerBridge.fire),
+            userInfo: nil,
+            repeats: true
+        )
         RunLoop.main.add(iconUpdateTimer!, forMode: .common)
     }
 
-    private func updateStatusBarIcon() {
+    fileprivate func updateStatusBarIcon() {
         guard let button = statusItem.button else { return }
         let info = monitor.systemMemory
         let pct = info.usagePercent
@@ -58,8 +79,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    // MARK: - Popover
-
     private func setupPopover() {
         popover = NSPopover()
         popover.contentSize = NSSize(width: 360, height: 500)
@@ -69,6 +88,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 .environmentObject(monitor)
                 .environmentObject(spawnMonitor)
                 .environmentObject(portMonitor)
+                .environmentObject(dnsMonitor)
         )
     }
 
@@ -81,10 +101,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Notifications
-
     private func requestNotificationPermission() {
-        guard Bundle.main.bundleIdentifier != nil else { return } // needs .app bundle
+        guard Bundle.main.bundleIdentifier != nil else { return }
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
     }
 }

@@ -1,0 +1,37 @@
+---
+description: Mandatory security and engineering standards—verify before treating work as done
+alwaysApply: true
+---
+
+# Code security & standards (all changes)
+
+Before **finishing** a task (especially PR-ready or user-facing behavior), cross-check this list. For a **dedicated security audit**, follow **swift-security.mdc** in depth.
+
+## Security (highest priority)
+
+- **Secrets**: No API keys, tokens, passwords, or private URLs in source, plist, scripts, or logs. Prefer **Keychain** for credentials; treat **UserDefaults** as non-secret unless values are strictly non-sensitive.
+- **Logging**: Do not log **PII**, file paths to user data, tokens, or command lines that include secrets. Prefer structured redaction or omit sensitive fields.
+- **Privileged / dangerous operations**: Any **`sudo`**, **`osascript` with administrator privileges**, shelling out, or **`NSTask`/`Process`**: validate inputs, avoid string injection, document why privilege is needed, and fail closed on error.
+- **Dynamic code & deserialization**: Avoid **`NSClassFromString`** / **`dlopen`** on untrusted names; treat external data (files, pasteboard, URLs) as hostile—no silent **`try?`** / empty **`catch {}`** on untrusted parse paths.
+- **Network**: HTTPS only unless there is an explicit, documented exception; no broad ATS disables without justification.
+- **Surface area**: New **entitlements**, **Info.plist** usage strings, and **file/network access** must be **minimal** and justified.
+
+## Correctness & safety
+
+- **Errors**: Propagate or handle explicitly; user-visible failures need a clear message or safe fallback—not undefined behavior.
+- **Concurrency**: UI updates on the **main** actor; avoid races on shared mutable state; timers and async work should be **weak self** / cancellable where lifecycle matters.
+- **Resource bounds**: Loops over processes, files, or network responses should stay bounded (limits, pagination, timeouts) to avoid hangs or memory spikes.
+
+## Swift / macOS craft (this repo)
+
+- Match existing **style and structure**; keep changes **minimal** for the task.
+- Prefer **warnings-clean** builds; see **swift-build-compile.mdc**.
+- Performance work is **measurement-driven**; see **swift-performance-optimization.mdc** when optimizing.
+
+## Shell & repo hygiene
+
+- Scripts (`install.sh`, etc.): **`set -e`**, quote variables, avoid **`eval`** on user input; document required permissions.
+
+## How to report issues (when auditing)
+
+For each problem: **issue**, **impact**, **evidence** (file/symbol), **fix**, **verification**—same structure as **swift-security.mdc**.

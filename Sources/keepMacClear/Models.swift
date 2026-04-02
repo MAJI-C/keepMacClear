@@ -77,12 +77,15 @@ struct SystemMemoryInfo {
 
 // MARK: - Shared formatter (avoids allocating a new one per call)
 
-private let _byteFormatter: ByteCountFormatter = {
-    let f = ByteCountFormatter()
-    f.countStyle = .memory
-    f.allowedUnits = [.useAll]
-    return f
-}()
+@MainActor
+private enum ByteFormatting {
+    static let formatter: ByteCountFormatter = {
+        let f = ByteCountFormatter()
+        f.countStyle = .memory
+        f.allowedUnits = [.useAll]
+        return f
+    }()
+}
 
 // MARK: - Process Memory
 
@@ -93,8 +96,9 @@ struct ProcessMemoryInfo: Identifiable, Equatable {
     let name: String
     let memoryBytes: UInt64
 
+    @MainActor
     var memoryFormatted: String {
-        _byteFormatter.string(fromByteCount: Int64(memoryBytes))
+        ByteFormatting.formatter.string(fromByteCount: Int64(memoryBytes))
     }
 
     func fraction(of total: UInt64) -> Double {
@@ -114,8 +118,9 @@ struct BrowserGroup: Identifiable, Equatable {
 
     var processCount: Int { processes.count }
 
+    @MainActor
     var memoryFormatted: String {
-        _byteFormatter.string(fromByteCount: Int64(totalMemory))
+        ByteFormatting.formatter.string(fromByteCount: Int64(totalMemory))
     }
 
     var browserIcon: String {
@@ -137,6 +142,20 @@ extension SystemMemoryInfo: Equatable {}
 
 // MARK: - Formatting Helpers
 
+@MainActor
 func formatBytes(_ bytes: UInt64) -> String {
-    _byteFormatter.string(fromByteCount: Int64(bytes))
+    ByteFormatting.formatter.string(fromByteCount: Int64(bytes))
+}
+
+// MARK: - proc_name buffer → String (Swift 6 deprecates String(cString:))
+
+enum ProcStrings {
+    nonisolated static func processName(from nameBuf: [CChar]) -> String {
+        let end = nameBuf.firstIndex(of: 0) ?? nameBuf.endIndex
+        return nameBuf[..<end].withUnsafeBufferPointer { ptr in
+            ptr.withMemoryRebound(to: UInt8.self) { u8 in
+                String(decoding: u8, as: UTF8.self)
+            }
+        }
+    }
 }
