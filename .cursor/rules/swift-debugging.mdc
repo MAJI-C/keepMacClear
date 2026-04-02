@@ -1,0 +1,43 @@
+---
+description: Swift bug investigation rule (full-context audit + diagrams + report)
+globs: "{**/*.swift,**/Package.swift,**/*.pbxproj,**/*.xcodeproj/**,**/*.xcworkspace/**}"
+alwaysApply: false
+---
+
+# Swift Bug Investigation (audit-style)
+
+When the user provides a **specific bug report**, treat it as an investigation across stages (project → files → functions → lines). Bugs may be **syntax**, **logic**, or **algorithmic**.
+
+## Required investigation artifacts
+
+- **Codebase ASCII tree**: include a tree of the whole project and highlight likely relevant areas.
+- **Progressive summaries**:
+  - **Project statement**: 3–6 bullets of what the app/package does.
+  - **File statement**: for each relevant file, 1–3 bullets of its role.
+  - **Function statement**: for each relevant function, 1–3 bullets of intent + inputs/outputs + invariants.
+- **Diagrams** (use Mermaid when possible):
+  - **Sequence diagram** of the failing flow (event → call chain → side effects → error/crash).
+  - **Class/type diagram** (key types, protocols, dependencies) around the bug.
+
+## Debugging workflow (always follow)
+
+- **Reproduce**: restate steps, inputs, environment (OS/toolchain), expected vs actual.
+- **Locate**: map symptoms to a concrete file/function and the **exact suspect lines**; cite evidence (logs, stack, failing test).
+- **Hypothesize**: list 2–4 plausible root causes; rank by likelihood and blast radius.
+- **Prove**: add targeted logging/assertions or a minimal test to confirm/deny the top hypothesis.
+- **Fix**: smallest safe change; avoid “papering over” (`try?`, `as!`, swallowing errors) unless justified.
+- **Verify**: rerun the reproduction + add/adjust tests; include commands to run.
+
+## Bug class checklists
+
+- **Syntax**: compiler error location, toolchain mismatch, missing imports/targets.
+- **Logic**: invariants violated, incorrect branching, wrong state transitions, nil/empty edge cases.
+- **Algorithm**: complexity hotspots, incorrect ordering, off-by-one, unstable sort/identity issues.
+
+## Report format (final output)
+
+- **Executive summary** (what broke, why, user impact).
+- **Artifacts**: ASCII tree + diagrams + summaries.
+- **Findings**: evidence-backed root cause.
+- **Fix**: what changed and why it’s safe.
+- **Verification**: commands and/or test plan confirming resolution.

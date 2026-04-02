@@ -1,0 +1,32 @@
+---
+description: Swift compile/build best practices (warnings, modules, SwiftPM/Xcode)
+globs: "{**/*.swift,**/Package.swift,**/*.pbxproj,**/*.xcodeproj/**,**/*.xcworkspace/**}"
+alwaysApply: false
+---
+
+# Swift Build & Compile Hygiene
+
+- Keep the build **warning-clean**; treat new warnings as failures in CI.
+- Prefer **small modules/targets** and stable public APIs to reduce incremental build cost.
+
+## Compile-time best practices
+
+- Avoid heavy generic types in public interfaces unless necessary; hide complexity behind protocols/types.
+- Prefer `some View` (opaque return types) over giant nested generic view types in signatures.
+- Keep files focused; split large types/extensions by feature to improve incremental rebuilds.
+
+## Dependency & target guidance
+
+- Use SwiftPM products/targets with clear boundaries; keep `testTarget`s separate.
+- Avoid “umbrella” imports; import the narrowest module you need.
+
+## Xcode settings guidance (when relevant)
+
+- Enable **Dead Code Stripping** for Release.
+- Prefer **Whole Module Optimization** for Release; keep Debug optimized minimally for fast iteration.
+- Keep `OTHER_SWIFT_FLAGS` minimal; document any non-default flags and why.
+
+## When compilation fails
+
+- Capture the **exact error**, toolchain version, and the minimal file/target set involved.
+- Don’t “fix” by silencing errors (e.g., `try?` / `as!`) unless justified with tests and safety.

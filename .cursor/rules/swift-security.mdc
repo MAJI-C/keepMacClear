@@ -1,0 +1,38 @@
+---
+description: Swift security auditing rule (find & triage vulnerabilities)
+globs: "{**/*.swift,**/*.entitlements,**/*.plist,**/Package.swift,**/*.pbxproj,**/*.xcodeproj/**,**/*.xcworkspace/**}"
+alwaysApply: false
+---
+
+# Swift Security Auditing (iOS/macOS)
+
+When asked to audit Swift code for security, do a **structured vuln review** and report each finding as:
+- **Issue**, **Impact**, **Evidence** (file/symbol), **Fix**, **Verification**.
+
+## High-signal searches (patterns that often indicate vulns)
+
+- **Secrets/PII in logs/code**: `print(`, `NSLog`, `os_log`, `Logger`, `"Authorization"`, `"Bearer "`, `"token"`, `"apikey"`, `"password"`.
+- **Insecure storage**: `UserDefaults`, `.standard`, plaintext files in `Documents/`/`tmp/`, archives without protection.
+- **Weak transport / ATS**: `http://`, `NSAppTransportSecurity`, `NSAllowsArbitraryLoads`, per-domain ATS exceptions.
+- **Fail-open parsing**: `try?` on untrusted input, silent `catch {}`; force casts `as!` from external data.
+- **WebView risk**: `WKWebView`, JS enabled, permissive navigation delegates, untrusted content.
+- **Deep link risk**: URL handling without allowlists/validation; open redirects; untrusted parameters driving navigation.
+
+## Audit checklist (triage in this order)
+
+- **Data exposure**: secrets/PII in logs, analytics, crash reports, pasteboard, screenshots, or persisted plaintext.
+- **Auth/session**: token storage (Keychain vs `UserDefaults`), rotation/logout, overly broad scopes.
+- **Transport security**: ATS disabled; accepting any cert; pinning without rotation/threat model.
+- **Input validation**: deep links, pasteboard, files, and network payloads not validated (fail-open behavior).
+- **Entitlements/permissions**: unnecessary capabilities; overly broad `Info.plist` usage descriptions.
+- **Supply chain**: risky deps, unpinned versions, or unreviewed binary SDKs.
+
+## Crypto audit rules of thumb
+
+- Prefer **CryptoKit**. Flag custom crypto helpers, static IVs/nonces, or encryption without authentication.
+- Prefer AEAD (e.g., AES-GCM / ChaChaPoly). Keys should come from Keychain/Secure Enclave when appropriate.
+
+## Evidence to capture per finding
+
+- Exact code path + data source, the sensitive fields involved, and the concrete threat (exfiltration/spoofing/tampering).
+- A fix strategy and how to verify (test, manual repro, Instruments/log diff, or config diff).

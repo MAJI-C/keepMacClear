@@ -1,0 +1,41 @@
+---
+description: Swift performance auditing rule (identify & fix hotspots with evidence)
+globs: "{**/*.swift,**/Package.swift,**/*.pbxproj,**/*.xcodeproj/**,**/*.xcworkspace/**}"
+alwaysApply: false
+---
+
+# Swift Performance Auditing (profiling-first)
+
+When asked to “optimize performance”, do a **structured perf audit** and report each finding as:
+- **Hotspot**, **Symptom**, **Evidence** (metric + tool), **Root cause**, **Fix**, **Before/after**.
+
+## Measurement rules (don’t guess)
+
+- Prefer **Instruments**: Time Profiler, Allocations, Leaks, Main Thread Checker, Points of Interest.
+- Capture **device + build config** (Debug/Release) and **repro steps** for the slowdown.
+- Validate optimizations in **Release** when relevant (optimizer can change behavior/perf).
+
+## High-signal audit targets (triage in this order)
+
+- **Main-thread work**: sync I/O, JSON decode, image decode/resize, crypto, large layout work.
+- **Allocations/retains**: excessive temporary arrays/strings, bridging churn, repeated formatter creation.
+- **ARC/retain cycles**: long-lived closures, delegates, timers, observers (leaks → jank).
+- **Concurrency “task storms”**: unbounded `Task {}` fan-out, missing cancellation, chatty cross-actor hops.
+- **SwiftUI invalidation**: expensive work in `body`, unstable identities, models recreated each render.
+
+## Swift Concurrency audit prompts
+
+- Identify where tasks are created; ensure **structured concurrency** and explicit limits.
+- Check cancellation paths (`Task` handles, `onDisappear`, `deinit`, `withTaskCancellationHandler`).
+- Minimize cross-actor hops on hot paths; isolate state so most work stays on one executor.
+
+## SwiftUI audit prompts
+
+- Ensure expensive derived data isn’t recomputed in `body`; move to model or memoize.
+- Verify stable identity (`id`) in lists; avoid recreating reference models (use `@StateObject` when owned).
+
+## Evidence to include in reports
+
+- A concrete metric (CPU time, alloc count/bytes, frame drops, app hang duration).
+- A stack trace / symbol / file+function pointing to the hotspot.
+- A before/after comparison and how it was measured.

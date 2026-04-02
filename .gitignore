@@ -1,0 +1,61 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+
+# Xcode
+DerivedData/
+build/
+*.xcuserstate
+*.xccheckout
+*.xcscmblueprint
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Xcode user-specific settings (keep shared schemes/settings)
+xcuserdata/
+*.xcuserdatad/
+*.xcuserdatad/**
+
+# Swift Package Manager
+.build/
+.swiftpm/xcode/package.xcworkspace/
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+
+# Accio dependency manager
+.accio/
+
+# Carthage
+Carthage/Build/
+
+# CocoaPods
+Pods/
+
+# fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+
+# Code Coverage
+*.gcno
+*.gcda
+
+# Logs
+*.log
+
+# Temporary / swap files
+*~
+*.swp
+*.swo
+
+# Tuist
+.tuist-cache/
+
+# Playgrounds
+timeline.xctimeline
+playground.xcworkspace
