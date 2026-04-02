@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var monitor: MemoryMonitor
+    @EnvironmentObject var spawnMonitor: ProcessSpawnMonitor
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -46,6 +47,19 @@ struct SettingsView: View {
                 .padding(6)
             }
 
+            GroupBox("Spawn Detection") {
+                VStack(alignment: .leading, spacing: 12) {
+                    Toggle("Monitor suspicious process spawns", isOn: Binding(
+                        get: { spawnMonitor.isEnabled },
+                        set: { _ in spawnMonitor.toggleEnabled() }
+                    ))
+                    Text("Alerts when apps like Office, Mail, or Preview spawn shells, scripts, or network tools — a common sign of exploitation.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(6)
+            }
+
             GroupBox("About") {
                 VStack(alignment: .leading, spacing: 6) {
                     infoRow(label: "Physical RAM",
@@ -68,7 +82,7 @@ struct SettingsView: View {
             }
         }
         .padding(20)
-        .frame(width: 360, height: 440)
+        .frame(width: 360, height: 540)
     }
 
     private func infoRow(label: String, value: String) -> some View {

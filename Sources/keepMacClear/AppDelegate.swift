@@ -6,6 +6,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popover: NSPopover!
     let monitor = MemoryMonitor()
+    let spawnMonitor = ProcessSpawnMonitor()
     private var iconUpdateTimer: Timer?
 
     // Cached once — font object is constant, no need to re-allocate every 2 s.
@@ -60,11 +61,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupPopover() {
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 330, height: 500)
+        popover.contentSize = NSSize(width: 360, height: 500)
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(
             rootView: DashboardView()
                 .environmentObject(monitor)
+                .environmentObject(spawnMonitor)
         )
     }
 

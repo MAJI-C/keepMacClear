@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DashboardView: View {
     @EnvironmentObject var monitor: MemoryMonitor
+    @EnvironmentObject var spawnMonitor: ProcessSpawnMonitor
     @State private var showSettings = false
     @State private var cleanState: CleanState = .idle
 
@@ -13,6 +14,9 @@ struct DashboardView: View {
             Divider()
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 14) {
+                    if !spawnMonitor.events.isEmpty {
+                        spawnAlertsSection
+                    }
                     usageSection
                     if !monitor.browserGroups.isEmpty {
                         browsersSection
@@ -24,10 +28,12 @@ struct DashboardView: View {
             Divider()
             footer
         }
-        .frame(width: 330, height: 500)
+        .frame(width: 360, height: 500)
         .background(Color(NSColor.windowBackgroundColor))
         .sheet(isPresented: $showSettings) {
-            SettingsView().environmentObject(monitor)
+            SettingsView()
+                .environmentObject(monitor)
+                .environmentObject(spawnMonitor)
         }
     }
 
@@ -131,18 +137,56 @@ struct DashboardView: View {
             .foregroundColor(.secondary)
     }
 
+    // MARK: - Spawn Alerts
+
+    private var spawnAlertsSection: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                sectionHeader("Spawn Alerts", icon: "exclamationmark.shield")
+                Spacer()
+                Text("\(spawnMonitor.events.count)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.red, in: Capsule())
+                Button {
+                    spawnMonitor.clearEvents()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Clear all spawn alerts")
+            }
+
+            ForEach(spawnMonitor.events.prefix(10)) { event in
+                SpawnAlertRow(event: event) {
+                    spawnMonitor.dismissEvent(event)
+                }
+            }
+        }
+    }
+
     // MARK: - Footer
 
     private var footer: some View {
         HStack(spacing: 10) {
-            Toggle("Auto-clean", isOn: $monitor.isAutoCleanEnabled)
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-            Text("Auto-clean")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            HStack(spacing: 6) {
+                Toggle("", isOn: $monitor.isAutoCleanEnabled)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .labelsHidden()
+                    .accessibilityLabel("Auto-clean")
+                Text("Auto-clean")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
 
-            Spacer()
+            Spacer(minLength: 4)
 
             // Quick clean (no prompt)
             Button(action: quickClean) {
