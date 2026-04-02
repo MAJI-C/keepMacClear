@@ -7,6 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var popover: NSPopover!
     let monitor = MemoryMonitor()
     let spawnMonitor = ProcessSpawnMonitor()
+    let portMonitor = PortMonitor()
     private var iconUpdateTimer: Timer?
 
     // Cached once — font object is constant, no need to re-allocate every 2 s.
@@ -67,6 +68,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             rootView: DashboardView()
                 .environmentObject(monitor)
                 .environmentObject(spawnMonitor)
+                .environmentObject(portMonitor)
         )
     }
 

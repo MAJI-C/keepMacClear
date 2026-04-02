@@ -3,7 +3,9 @@ import SwiftUI
 struct DashboardView: View {
     @EnvironmentObject var monitor: MemoryMonitor
     @EnvironmentObject var spawnMonitor: ProcessSpawnMonitor
+    @EnvironmentObject var portMonitor: PortMonitor
     @State private var showSettings = false
+    @State private var showPortMonitor = false
     @State private var cleanState: CleanState = .idle
 
     enum CleanState { case idle, running, done }
@@ -16,6 +18,9 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 14) {
                     if !spawnMonitor.events.isEmpty {
                         spawnAlertsSection
+                    }
+                    if !portMonitor.statuses.filter(\.isOpen).isEmpty {
+                        openPortsSection
                     }
                     usageSection
                     if !monitor.browserGroups.isEmpty {
@@ -34,6 +39,10 @@ struct DashboardView: View {
             SettingsView()
                 .environmentObject(monitor)
                 .environmentObject(spawnMonitor)
+        }
+        .sheet(isPresented: $showPortMonitor) {
+            PortMonitorView()
+                .environmentObject(portMonitor)
         }
     }
 
@@ -137,6 +146,61 @@ struct DashboardView: View {
             .foregroundColor(.secondary)
     }
 
+    // MARK: - Open Ports
+
+    private var openPortsSection: some View {
+        let openPorts = portMonitor.statuses.filter(\.isOpen)
+        return VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                sectionHeader("Open Ports", icon: "network.badge.shield.half.filled")
+                Spacer()
+                Text("\(openPorts.count)")
+                    .font(.system(size: 10, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.orange, in: Capsule())
+                Button { showPortMonitor = true } label: {
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Open port monitor")
+            }
+            ForEach(openPorts.prefix(5)) { status in
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(portSeverityColor(status.rule.severity))
+                        .frame(width: 6, height: 6)
+                    Text("\(status.rule.port)")
+                        .font(.system(.caption, design: .monospaced).weight(.bold))
+                    Text(status.rule.name)
+                        .font(.caption.weight(.medium))
+                    Spacer()
+                    Text(status.rule.severity.label)
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundColor(portSeverityColor(status.rule.severity))
+                }
+                .padding(.vertical, 2)
+            }
+            if openPorts.count > 5 {
+                Text("+\(openPorts.count - 5) more")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func portSeverityColor(_ severity: PortRule.Severity) -> Color {
+        switch severity {
+        case .critical: return .red
+        case .high:     return .orange
+        case .medium:   return .yellow
+        case .low:      return .green
+        }
+    }
+
     // MARK: - Spawn Alerts
 
     private var spawnAlertsSection: some View {
@@ -212,6 +276,12 @@ struct DashboardView: View {
             .controlSize(.small)
             .disabled(cleanState == .running)
             .help("Purge disk cache (requires admin password)")
+
+            Button { showPortMonitor = true } label: {
+                Image(systemName: "network.badge.shield.half.filled")
+            }
+            .buttonStyle(.borderless)
+            .help("Port Monitor")
 
             Button { showSettings = true } label: {
                 Image(systemName: "gear")
