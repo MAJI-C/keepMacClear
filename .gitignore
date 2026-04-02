@@ -59,3 +59,7 @@ fastlane/test_output/
 # Playgrounds
 timeline.xctimeline
 playground.xcworkspace
+
+# Misc
+clode
+.claude
