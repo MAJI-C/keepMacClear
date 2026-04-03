@@ -1,29 +1,38 @@
 # keepMacClear
 
-A **macOS menu bar app** (Swift / SwiftUI) that shows **live RAM usage**, offers **quick and full memory relief**, and bundles **security / network-awareness tools** (listening ports, DNS, suspicious spawns). It does **not** configure macOS’s built-in **Application Firewall** or **pf** — it helps you **see exposure and behavior**, not install packet rules.
+**RAM in the menu bar.** Click the percentage to open a panel: memory breakdown, cleanup buttons, and optional security checks.
 
-## Features
+## At a glance
+
+| | |
+|--|--|
+| **See RAM** | Live % in the menu bar; open the popover for usage, memory bar, browsers, heavy apps. |
+| **Free memory** | **Quick** — instant, no password. **Full Clean** — deeper macOS clean, asks for your password. **Auto-clean** — runs Quick-style relief when RAM stays high (see Settings). |
+| **Risky open ports** | **Port Monitor** — warns if common “bad idea if exposed” ports are listening; you can try to stop the process using that port. |
+| **DNS** | **DNS Monitor** — shows which DNS servers you’re using and flags unfamiliar or changed setups. |
+| **Odd app behavior** | **Spawn Monitor** — can warn (and optionally block) when normal apps start shells, scripts, or network tools you might not expect. |
+
+It is **not** the macOS firewall. It **watches and alerts**; it does not replace System Settings firewall rules.
+
+## Popover layout
+
+- **Top**: app name and memory pressure (OK / warning / critical).
+- **Middle**: alerts (if any) for spawns, DNS, or open ports, then your RAM details.
+- **Bottom**: Auto-clean · Quick · Full Clean · Spawn · Ports · DNS · Settings · Quit.
+
+## Feature details (for readers who want more)
 
 ### Memory
 
-- **Menu bar**: compact **RAM %** label, color-coded by pressure (normal / warning / critical).
-- **Popover dashboard** (~360×500): memory overview, breakdown bar (active / wired / compressed / inactive), top processes, browser memory groups when detected.
-- **Quick clean**: `malloc_zone_pressure_relief` — instant, no password (same mechanism as **Auto-clean** when it runs).
-- **Full clean**: runs macOS **`purge`** via AppleScript with **administrator privileges** (native password prompt).
-- **Auto-clean** (toggle): when **RAM % ≥ alert threshold** (default 85%, configurable in Settings), after a **5‑minute** notification debounce, runs the same allocator relief as Quick clean. Toggle is **not** persisted across launches.
-- **Settings** (gear): RAM alert threshold; optional **per-process memory limit** with **auto-kill** and notifications; toggle for **spawn monitoring**; system info (RAM, cores, macOS version).
+- Menu bar color matches pressure; popover shows active / wired / compressed / inactive and top processes.
+- **Auto-clean** uses the same light relief as **Quick**; it only runs after RAM crosses your alert % and a 5‑minute notification cooldown. The toggle resets when you quit the app.
+- **Settings**: change the RAM alert %, optional per-app memory cap with auto-kill, turn spawn monitoring on or off.
 
-### Security & network (often grouped with “firewall-style” awareness)
+### Security & network
 
-- **Port monitor** (shield icon in footer, full **Port Monitor** sheet): **TCP bind probe** + rule list for ports that are often risky when left listening (Telnet, RDP, SMB, databases, Docker API, etc.). Rules live in **`~/Library/Application Support/keepMacClear/port-rules.json`** (created with defaults if missing). Notifications when a watched port opens; **Close port** path uses **`/usr/sbin/lsof`** to find listeners then **SIGTERM / SIGKILL** (runs off the main actor). This is **exposure / hardening visibility**, not a firewall engine.
-- **Spawn monitor** (exclamation shield, **Spawn Monitor** sheet): periodic scan of new PIDs; flags **parent → child** pairs where “office / mail / preview …” apps spawn **shells, interpreters, or network tools** (heuristic list in code). **Block rules** (persisted in UserDefaults) **auto-kill** matching children; **Events** tab and **Block rules** tab; **Process tree** for monitored parents. Optional notifications.
-- **DNS monitor** (antenna icon, **DNS Monitor** sheet): reads resolver config via **SystemConfiguration** (e.g. global / per-service DNS), classifies known public resolvers (Cloudflare, Google, Quad9, OpenDNS vs unknown), aggregates **safe / mixed / unsafe** status, optional **change log** and notifications when server sets change. Dashboard shows a **DNS alert strip** when status is not safe/unknown.
-
-### Popover layout (quick map)
-
-- **Header**: app name + RAM pressure badge.
-- **Body** (scroll): **spawn alerts** (if any) → **DNS alert** (if not safe/unknown) → **open ports** summary (if any rule is listening) → **usage** → **browsers** → **top processes**.
-- **Footer**: **Auto-clean** · **Quick** · **Full Clean** · **Spawn Monitor** · **Port Monitor** · **DNS Monitor** · **Settings** · **Quit**.
+- **Port monitor**: editable rules in `~/Library/Application Support/keepMacClear/port-rules.json`; **Close port** uses `lsof` then signals to stop listeners.
+- **Spawn monitor**: heuristics + optional persisted block rules (auto-kill matching spawns); events list and process tree in its window.
+- **DNS monitor**: reads system DNS via SystemConfiguration; known vs unknown resolvers; change history and notifications optional.
 
 ## Requirements
 
@@ -98,4 +107,4 @@ swift build -c release   # Release (used by install.sh)
 
 ## License
 
-Add or link a `LICENSE` file if you distribute this project.
+This project is licensed under the **GNU General Public License v3.0 or later**. See the [`LICENSE`](LICENSE) file for the full text.
